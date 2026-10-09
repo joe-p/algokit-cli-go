@@ -1,0 +1,9 @@
+DEBUG: Running '{container_engine} version' in '{current_working_directory}'
+DEBUG: {container_engine}: STDOUT
+DEBUG: {container_engine}: STDERR
+DEBUG: Running '{container_engine} compose ls --format json --filter name=algokit_sandbox*' in '{current_working_directory}'
+DEBUG: {container_engine}: []
+DEBUG: Running '{container_engine} compose ps algod --format json' in '{app_config}/sandbox'
+DEBUG: {container_engine}: [{"Name": "algokit_sandbox_algod", "State": "running"}]
+Opening Bash console on the algod node; execute `exit` to return to original console
+DEBUG: Running '{container_engine} exec -it -w /root algokit_sandbox_algod bash' in '{current_working_directory}'

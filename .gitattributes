@@ -1,0 +1,3 @@
+# The LocalNet templates and Python fixtures must match the Python CLI byte for byte.
+internal/sandbox/templates/** text eol=lf
+internal/testsupport/testdata/** text eol=lf
