@@ -41,6 +41,22 @@ It shares state with the Python CLI, so the two can be used interchangeably:
 The LocalNet templates in `internal/sandbox/templates` are generated from the Python CLI and must match it byte for
 byte, otherwise the Python CLI considers the LocalNet definition out of date (and vice versa).
 
+## Releases
+
+Releases are managed by [semfrag](https://github.com/joe-p/semfrag). Each pull request that changes Go code adds a
+fragment to `changelog.d/` (enforced in CI), for example `changelog.d/fix-logs-tail.md`:
+
+```md
+## Fixes
+
+- Fix `localnet logs --tail` being ignored
+```
+
+The sections and the version bump each implies are configured in `semfrag.json` (`Breaking Changes` and `Features`
+bump the minor version while pre-1.0, `Fixes` the patch). On every push to `main`, `.github/workflows/release.yml`
+merges the fragments into `CHANGELOG.md`, commits and tags the release, and creates a GitHub release with standalone
+binaries for Linux, macOS and Windows (x64 and arm64) built by `scripts/build-binaries.sh`.
+
 ## Layout
 
 | Path | Python equivalent |

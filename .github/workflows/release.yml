@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the branch tip rather than the pushed commit, so a queued run
+      # releases everything that has landed on main since.
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Prepare release
+        id: semfrag
+        uses: joe-p/semfrag/actions/prepare@192fc3b888fc0eb822a1d5faeecb21c9ba934769 # v0.10.0
+
+      - name: Set up Go
+        if: steps.semfrag.outputs.released == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build standalone binaries
+        if: steps.semfrag.outputs.released == 'true'
+        env:
+          VERSION: ${{ steps.semfrag.outputs.version }}
+        run: bash scripts/build-binaries.sh
+
+      - name: Commit, tag and create GitHub release
+        if: steps.semfrag.outputs.released == 'true'
+        uses: joe-p/semfrag/actions/publish@192fc3b888fc0eb822a1d5faeecb21c9ba934769 # v0.10.0
+        with:
+          assets: dist/*
+
+      - name: Roll back failed release
+        if: failure() || cancelled()
+        uses: joe-p/semfrag/actions/rollback@192fc3b888fc0eb822a1d5faeecb21c9ba934769 # v0.10.0

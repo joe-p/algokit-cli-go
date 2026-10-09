@@ -40,3 +40,17 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+
+  changelog:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changelog
+        uses: joe-p/semfrag/actions/check@192fc3b888fc0eb822a1d5faeecb21c9ba934769 # v0.10.0
+        with:
+          require-fragment-for: \.go$
