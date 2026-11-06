@@ -20,6 +20,7 @@ algokit [-v] [--color/--no-color] <command>
   goal [--console] [--interactive] [GOAL_ARGS...]
   localnet config [docker|podman] [-f]
   localnet start [-n NAME] [-P CONFIG_DIR] [-d/--no-dev] [--force] [--check]
+                 [--localnet-config FILE]
   localnet stop
   localnet reset [--update/--no-update] [-P CONFIG_DIR] [--check]
   localnet status [--check]
@@ -40,6 +41,53 @@ It shares state with the Python CLI, so the two can be used interchangeably:
 
 The LocalNet templates in `internal/sandbox/templates` are generated from the Python CLI and must match it byte for
 byte, otherwise the Python CLI considers the LocalNet definition out of date (and vice versa).
+
+## Building algod from source
+
+Build LocalNet's algod from a remote go-algorand branch, tag, or full commit SHA using a JSON configuration file.
+For example, `config.json`:
+
+```json
+{
+  "algod": {
+    "repo": "https://github.com/algorand/go-algorand.git",
+    "ref": "feature/my-change"
+  }
+}
+```
+
+```sh
+algokit localnet start --name foo --localnet-config config.json
+```
+
+Use `algod.repo` to select a fork. At least one of `algod.repo` or `algod.ref` must be supplied; omitted fields retain
+saved values, or default to upstream go-algorand and `master` on first use. Unknown fields, blank values, and invalid
+JSON are rejected before changing LocalNet. Relative configuration paths resolve from the current working directory;
+`--config-dir` still separately controls where LocalNet state is stored.
+
+Supplying `--localnet-config` builds a local image before starting LocalNet. Builds run entirely in the configured
+container engine, using an embedded Dockerfile and the selected checkout's Go toolchain version and runtime scripts. No host Git or Go
+installation is needed. The repository must be accessible from inside the build without host credentials;
+private-repository authentication is not currently configured. Only build repositories you trust: their build
+scripts run inside the container build.
+
+The effective repository and ref are saved in `algod-source.json` in the LocalNet configuration directory. Starting
+again without `--localnet-config` reuses the image and does not need the original JSON file:
+
+```sh
+algokit localnet start --name foo
+
+# Rebuild using the file's current settings and remote branch tip:
+algokit localnet start --name foo --localnet-config config.json
+```
+
+Ordinary `localnet reset` reuses the image; `localnet reset --update` rebuilds the saved ref and updates the other
+service images. A reset destroys chain state. As before, `reset --update` on a named instance prompts before
+replacing its Compose configuration, but keeps the saved source selection. Source-built LocalNets do not perform
+published-image version checks and never pull over the locally built algod image.
+
+Named instances are recommended, especially when sharing configuration with the Python CLI, which does not
+understand these source settings. Older refs must still provide a compatible build-script and runtime layout.
 
 ## Releases
 

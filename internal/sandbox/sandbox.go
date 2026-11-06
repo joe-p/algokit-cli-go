@@ -115,6 +115,7 @@ func (s ServiceInfo) State() string   { return s.str("State") }
 type ComposeSandbox struct {
 	Name      string
 	Directory string
+	Source    *AlgodSource
 }
 
 // New returns the sandbox with the given name (BaseName for the default) in configPath (default: the app config
@@ -134,6 +135,9 @@ func New(name, configPath string) (*ComposeSandbox, error) {
 			return nil, err
 		}
 	}
+	if err := s.loadSource(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -148,7 +152,10 @@ func (s *ComposeSandbox) AlgodNetworkTemplateFilePath() string {
 	return filepath.Join(s.Directory, "algod_network_template.json")
 }
 
-func (s *ComposeSandbox) latestYAML() string { return DockerComposeYAML("algokit_" + s.Name) }
+func (s *ComposeSandbox) latestYAML() string {
+	return strings.Replace(DockerComposeYAML("algokit_"+s.Name),
+		"    image: "+AlgorandImage, s.algodImageDefinition(), 1)
+}
 
 // FromEnvironment finds the currently running AlgoKit LocalNet (if any).
 func FromEnvironment() (*ComposeSandbox, error) {
@@ -325,7 +332,14 @@ func (s *ComposeSandbox) Down() error {
 // Pull fetches the latest LocalNet images.
 func (s *ComposeSandbox) Pull() error {
 	logger.Info("Fetching any container updates from DockerHub...")
-	if _, err := s.runComposeCommand("pull --ignore-pull-failures --quiet", log.Info, ""); err != nil {
+	services := ""
+	if s.Source != nil {
+		if err := s.RebuildAlgod(); err != nil {
+			return err
+		}
+		services = " conduit indexer-db indexer"
+	}
+	if _, err := s.runComposeCommand("pull --ignore-pull-failures --quiet"+services, log.Info, ""); err != nil {
 		return err
 	}
 	logger.Debug("Image version cache reset")
@@ -432,6 +446,10 @@ func IsImageUpToDate(imageName string) bool {
 // CheckForNewImageVersions warns if newer LocalNet images are available, checking Docker Hub at most once a week
 // unless force is set.
 func (s *ComposeSandbox) CheckForNewImageVersions(force bool) {
+	// Published-image checks do not describe a source-built LocalNet.
+	if s.Source != nil {
+		return
+	}
 	var state imageVersionCache
 	if force || shouldCheckImageVersions() {
 		// Check Docker registry for new versions

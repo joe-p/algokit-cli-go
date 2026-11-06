@@ -1,0 +1,45 @@
+# Source-build variant of go-algorand's root Dockerfile. The checkout supplies
+# both the binaries and their matching runtime scripts/configuration.
+FROM ubuntu:24.04 AS builder
+ARG TARGETARCH
+ENV HOME=/node DEBIAN_FRONTEND=noninteractive GOPATH=/dist
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git curl bsdmainutils && \
+    rm -rf /var/lib/apt/lists/*
+ENV PATH=/usr/local/go/bin:${PATH}
+ARG ALGOD_REPO
+ARG ALGOD_REF
+ARG BUILD_NONCE
+# FETCH_HEAD handles branches, tags and commit SHAs without interpolating them
+# into shell commands. Every requested build refreshes the remote ref.
+RUN test -n "$BUILD_NONCE" && git init /src && git -C /src remote add origin "$ALGOD_REPO" && \
+    git -C /src fetch --depth=1 -- origin "$ALGOD_REF" && \
+    git -C /src checkout --detach FETCH_HEAD && git -C /src rev-parse HEAD
+WORKDIR /src
+# Different refs can require different toolchains; use the checkout's pin.
+RUN GO_VERSION="$(./scripts/get_golang_version.sh)" && \
+    ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
+    curl --fail --location "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" -o /go.tar.gz && \
+    tar -C /usr/local -xzf /go.tar.gz && rm /go.tar.gz
+RUN ./scripts/configure_dev.sh && BUILD_NUMBER="" BRANCH="$ALGOD_REF" make build
+RUN mkdir -p /runtime/bin /runtime/run && \
+    for binary in algocfg algod algokey diagcfg goal kmd msgpacktool node_exporter updater; do \
+      cp "/dist/bin/$binary" /runtime/bin/; \
+    done && \
+    cp cmd/updater/update.sh /runtime/bin/ && \
+    cp -r docker/files/run/. /runtime/run/ && \
+    cp -r installer/genesis /runtime/run/ && \
+    cp installer/config.json.example /runtime/run/
+
+FROM debian:bookworm-20250630-slim
+ENV PATH=/node/bin:${PATH} ALGOD_PORT=8080 KMD_PORT=7833 ALGORAND_DATA=/algod/data
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && \
+    update-ca-certificates && rm -rf /var/lib/apt/lists/* && \
+    mkdir -p "$ALGORAND_DATA" && \
+    groupadd --gid=999 --system algorand && \
+    useradd --uid=999 --no-log-init --create-home --system --gid algorand algorand && \
+    chown -R algorand:algorand /algod
+COPY --chown=algorand:algorand --from=builder /runtime/bin/ /node/bin/
+COPY --chown=algorand:algorand --from=builder /runtime/run/ /node/run/
+EXPOSE 8080 7833 4160 9100
+WORKDIR /algod
+CMD ["/node/run/run.sh"]

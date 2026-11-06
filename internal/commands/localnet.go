@@ -168,7 +168,7 @@ func runConfig(engineName string, force bool) error {
 	return nil
 }
 
-func runStart(name string, hasName bool, configPath string, devMode, force, check bool) error {
+func runStart(name string, hasName bool, configPath string, devMode, force, check bool, localnetConfig *sandbox.LocalnetConfig) error {
 	sb, err := sandbox.FromEnvironment()
 	if err != nil {
 		return err
@@ -196,6 +196,11 @@ func runStart(name string, hasName bool, configPath string, devMode, force, chec
 	sb, err = sandbox.New(name, configPath)
 	if err != nil {
 		return err
+	}
+	if localnetConfig != nil && localnetConfig.Algod != nil {
+		if err := sb.ConfigureAlgodSource(localnetConfig.Algod.Repo, localnetConfig.Algod.Ref); err != nil {
+			return err
+		}
 	}
 	status, err := sb.ComposeFileStatus()
 	if err != nil {
@@ -443,6 +448,14 @@ func localnetCommand() *cli.Command {
 							"AlgoKit will not manage the configuration of named LocalNet instances, " +
 							"allowing developers to configure it in any way they need. Defaults to 'sandbox'.",
 					},
+					{
+						Key:     "localnet_config",
+						Opts:    []string{"--localnet-config"},
+						Kind:    cli.Value,
+						Metavar: "FILE",
+						Help: "Load LocalNet settings from a JSON file. " +
+							"The algod object accepts repo and ref; supplying this file rebuilds algod and saves the settings per LocalNet.",
+					},
 					configDirOption("Specify the custom localnet configuration directory. Defaults to '~/.config' " +
 						`on UNIX and 'C:\\Users\\USERNAME\\AppData\\Roaming' on Windows.`),
 					{
@@ -464,7 +477,18 @@ func localnetCommand() *cli.Command {
 				Run: func(ctx *cli.Context) error {
 					name, hasName := ctx.String("name")
 					configPath, _ := ctx.String("config_dir")
-					return runStart(name, hasName, configPath, ctx.Bool("dev"), ctx.Bool("force"), ctx.Bool("check"))
+					var localnetConfig *sandbox.LocalnetConfig
+					if path, supplied := ctx.String("localnet_config"); supplied {
+						if strings.TrimSpace(path) == "" {
+							return clierr.New("--localnet-config must not be blank")
+						}
+						var err error
+						localnetConfig, err = sandbox.ReadLocalnetConfig(path)
+						if err != nil {
+							return clierr.New("%s", err)
+						}
+					}
+					return runStart(name, hasName, configPath, ctx.Bool("dev"), ctx.Bool("force"), ctx.Bool("check"), localnetConfig)
 				},
 			},
 			{
