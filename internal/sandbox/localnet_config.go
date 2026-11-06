@@ -8,10 +8,12 @@ import (
 	"strings"
 )
 
-// LocalnetConfig contains user-supplied LocalNet settings. The selected source
-// is saved with the instance, so the input file is not needed on later starts.
+// LocalnetConfig contains user-supplied LocalNet settings. Settings are saved
+// with the instance, so the input file is not needed on later starts.
 type LocalnetConfig struct {
-	Algod *AlgodSource `json:"algod"`
+	AlgodSource *AlgodSource `json:"algodSource,omitempty"`
+	DevMode     *bool        `json:"devMode,omitempty"`
+	VFuture     *bool        `json:"vFuture,omitempty"`
 }
 
 // ReadLocalnetConfig validates the entire file before any LocalNet is changed.
@@ -23,12 +25,15 @@ func ReadLocalnetConfig(path string) (*LocalnetConfig, error) {
 	}
 	defer file.Close()
 
-	// Pointers distinguish omitted fields from explicitly blank values.
+	// Pointers distinguish omitted fields from explicitly blank values. Raw
+	// booleans let us reject null as well as strings and numbers.
 	var input struct {
 		Algod *struct {
 			Repo *string `json:"repo"`
 			Ref  *string `json:"ref"`
-		} `json:"algod"`
+		} `json:"algodSource"`
+		DevMode json.RawMessage `json:"devMode"`
+		VFuture json.RawMessage `json:"vFuture"`
 	}
 	invalid := func(err error) (*LocalnetConfig, error) {
 		return nil, fmt.Errorf("invalid LocalNet config %q: %w", path, err)
@@ -41,24 +46,47 @@ func ReadLocalnetConfig(path string) (*LocalnetConfig, error) {
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return invalid(fmt.Errorf("expected a single JSON object"))
 	}
-	if input.Algod == nil || (input.Algod.Repo == nil && input.Algod.Ref == nil) {
-		return invalid(fmt.Errorf("algod must contain repo or ref"))
-	}
-	source := &AlgodSource{}
+	config := &LocalnetConfig{}
 	for _, field := range []struct {
 		name   string
-		value  *string
-		target *string
+		value  json.RawMessage
+		target **bool
 	}{
-		{"repo", input.Algod.Repo, &source.Repo},
-		{"ref", input.Algod.Ref, &source.Ref},
+		{"devMode", input.DevMode, &config.DevMode},
+		{"vFuture", input.VFuture, &config.VFuture},
 	} {
-		if field.value != nil {
-			if strings.TrimSpace(*field.value) == "" {
-				return invalid(fmt.Errorf("algod.%s must not be blank", field.name))
+		if len(field.value) != 0 {
+			var value bool
+			if string(field.value) == "null" || json.Unmarshal(field.value, &value) != nil {
+				return invalid(fmt.Errorf("%s must be a boolean", field.name))
 			}
-			*field.target = *field.value
+			*field.target = &value
 		}
 	}
-	return &LocalnetConfig{Algod: source}, nil
+	if input.Algod != nil {
+		if input.Algod.Repo == nil && input.Algod.Ref == nil {
+			return invalid(fmt.Errorf("algodSource must contain repo or ref"))
+		}
+		source := &AlgodSource{}
+		for _, field := range []struct {
+			name   string
+			value  *string
+			target *string
+		}{
+			{"repo", input.Algod.Repo, &source.Repo},
+			{"ref", input.Algod.Ref, &source.Ref},
+		} {
+			if field.value != nil {
+				if strings.TrimSpace(*field.value) == "" {
+					return invalid(fmt.Errorf("algodSource.%s must not be blank", field.name))
+				}
+				*field.target = *field.value
+			}
+		}
+		config.AlgodSource = source
+	}
+	if config.AlgodSource == nil && config.DevMode == nil && config.VFuture == nil {
+		return invalid(fmt.Errorf("config must contain algodSource, devMode, or vFuture"))
+	}
+	return config, nil
 }

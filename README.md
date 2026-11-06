@@ -42,14 +42,44 @@ It shares state with the Python CLI, so the two can be used interchangeably:
 The LocalNet templates in `internal/sandbox/templates` are generated from the Python CLI and must match it byte for
 byte, otherwise the Python CLI considers the LocalNet definition out of date (and vice versa).
 
-## Building algod from source
+## LocalNet JSON configuration
 
-Build LocalNet's algod from a remote go-algorand branch, tag, or full commit SHA using a JSON configuration file.
-For example, `config.json`:
+Load settings from a JSON file:
+
+```sh
+algokit localnet start --name foo --localnet-config config.json
+```
+
+For example, `config.json` can toggle developer mode and the experimental consensus protocol without building an image:
 
 ```json
 {
-  "algod": {
+  "devMode": true,
+  "vFuture": true
+}
+```
+
+- `devMode`: enables developer mode (`true` by default).
+- `vFuture`: selects the `"future"` genesis consensus protocol when `true`; `false` uses algod's default protocol.
+  Defaults to `false`. This is independent of developer mode and may enable experimental, unstable behavior.
+
+Omitted toggles retain existing settings. Toggles are saved in `localnet-settings.json` alongside the LocalNet
+configuration and survive subsequent starts and resets, including configuration regeneration. Explicit `--dev` or
+`--no-dev` overrides JSON/saved `devMode`. Changing an existing network's toggles prompts before recreating it and
+**clearing all chain state**; `--force` skips this confirmation. A new network needs no confirmation.
+
+Unknown fields, invalid booleans (including `null`), and invalid JSON are rejected before changing LocalNet. Relative
+configuration paths resolve from the current working directory; `--config-dir` separately controls where LocalNet
+state is stored. At least one of `devMode`, `vFuture`, or `algodSource` must be provided.
+
+### Building algod from source
+
+Optionally include an `algodSource` object to build from a remote go-algorand branch, tag, or full commit SHA. It can be
+combined with either toggle above. For example:
+
+```json
+{
+  "algodSource": {
     "repo": "https://github.com/algorand/go-algorand.git",
     "ref": "feature/my-change"
   }
@@ -60,14 +90,13 @@ For example, `config.json`:
 algokit localnet start --name foo --localnet-config config.json
 ```
 
-Use `algod.repo` to select a fork. At least one of `algod.repo` or `algod.ref` must be supplied; omitted fields retain
-saved values, or default to upstream go-algorand and `master` on first use. Unknown fields, blank values, and invalid
-JSON are rejected before changing LocalNet. Relative configuration paths resolve from the current working directory;
-`--config-dir` still separately controls where LocalNet state is stored.
+Use `algodSource.repo` to select a fork. When `algodSource` is included, at least one of
+`algodSource.repo` or `algodSource.ref` must be supplied;
+omitted fields retain saved values, or default to upstream go-algorand and `master` on first use. Blank values are rejected.
 
-Supplying `--localnet-config` builds a local image before starting LocalNet. Builds run entirely in the configured
-container engine, using an embedded Dockerfile and the selected checkout's Go toolchain version and runtime scripts. No host Git or Go
-installation is needed. The repository must be accessible from inside the build without host credentials;
+Including `algodSource` in `--localnet-config` builds a local image before starting LocalNet. A toggle-only configuration
+reuses the existing image. Builds run entirely in the configured container engine, using an embedded Dockerfile and
+the selected checkout's Go toolchain version and runtime scripts. No host Git or Go installation is needed. The repository must be accessible from inside the build without host credentials;
 private-repository authentication is not currently configured. Only build repositories you trust: their build
 scripts run inside the container build.
 
@@ -83,7 +112,7 @@ algokit localnet start --name foo --localnet-config config.json
 
 Ordinary `localnet reset` reuses the image; `localnet reset --update` rebuilds the saved ref and updates the other
 service images. A reset destroys chain state. As before, `reset --update` on a named instance prompts before
-replacing its Compose configuration, but keeps the saved source selection. Source-built LocalNets do not perform
+replacing its Compose configuration, but keeps the saved source selection and network toggles. Source-built LocalNets do not perform
 published-image version checks and never pull over the locally built algod image.
 
 Named instances are recommended, especially when sharing configuration with the Python CLI, which does not

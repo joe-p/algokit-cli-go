@@ -168,7 +168,7 @@ func runConfig(engineName string, force bool) error {
 	return nil
 }
 
-func runStart(name string, hasName bool, configPath string, devMode, force, check bool, localnetConfig *sandbox.LocalnetConfig) error {
+func runStart(name string, hasName bool, configPath string, devOverride *bool, force, check bool, localnetConfig *sandbox.LocalnetConfig) error {
 	sb, err := sandbox.FromEnvironment()
 	if err != nil {
 		return err
@@ -197,8 +197,8 @@ func runStart(name string, hasName bool, configPath string, devMode, force, chec
 	if err != nil {
 		return err
 	}
-	if localnetConfig != nil && localnetConfig.Algod != nil {
-		if err := sb.ConfigureAlgodSource(localnetConfig.Algod.Repo, localnetConfig.Algod.Ref); err != nil {
+	if localnetConfig != nil && localnetConfig.AlgodSource != nil {
+		if err := sb.ConfigureAlgodSource(localnetConfig.AlgodSource.Repo, localnetConfig.AlgodSource.Ref); err != nil {
 			return err
 		}
 	}
@@ -228,6 +228,46 @@ func runStart(name string, hasName bool, configPath string, devMode, force, chec
 			"with the latest version, run `algokit localnet reset --update`")
 	}
 
+	settings := sb.Settings
+	if localnetConfig != nil {
+		if localnetConfig.DevMode != nil {
+			settings.DevMode = localnetConfig.DevMode
+		}
+		if localnetConfig.VFuture != nil {
+			settings.VFuture = localnetConfig.VFuture
+		}
+	}
+	if settings.DevMode != nil || settings.VFuture != nil {
+		// Explicit CLI dev flags override the JSON and saved settings. Without
+		// an explicit flag, the saved value must not be replaced by a default.
+		if devOverride != nil {
+			settings.DevMode = devOverride
+		}
+		changed, err := sb.NetworkSettingsChanged(settings)
+		if err != nil {
+			return err
+		}
+		if changed && status != sandbox.Missing && !force {
+			confirmed, err := prompt.Confirm("Changing LocalNet devMode/vFuture requires recreating the network and clearing all chain state. Continue?", true)
+			if err != nil || !confirmed {
+				return err
+			}
+		}
+		if err := sb.SetNetworkSettings(settings); err != nil {
+			return err
+		}
+		if changed && status != sandbox.Missing {
+			if err := sb.Down(); err != nil {
+				return err
+			}
+		}
+		return sb.Up()
+	}
+
+	devMode := true
+	if devOverride != nil {
+		devMode = *devOverride
+	}
 	currentDevMode, err := sb.IsAlgodDevMode()
 	if err != nil {
 		return err
@@ -454,7 +494,7 @@ func localnetCommand() *cli.Command {
 						Kind:    cli.Value,
 						Metavar: "FILE",
 						Help: "Load LocalNet settings from a JSON file. " +
-							"The algod object accepts repo and ref; supplying this file rebuilds algod and saves the settings per LocalNet.",
+							"Accepts devMode/vFuture toggles and an algodSource object with repo/ref. Settings are saved per LocalNet; specifying algodSource rebuilds its image.",
 					},
 					configDirOption("Specify the custom localnet configuration directory. Defaults to '~/.config' " +
 						`on UNIX and 'C:\\Users\\USERNAME\\AppData\\Roaming' on Windows.`),
@@ -463,8 +503,8 @@ func localnetCommand() *cli.Command {
 						Opts:          []string{"--dev", "-d"},
 						SecondaryOpts: []string{"--no-dev"},
 						Kind:          cli.BoolPair,
-						Default:       true,
-						Help:          "Control whether to launch 'algod' in developer mode or not. Defaults to 'yes'.",
+						Help: "Control whether to launch 'algod' in developer mode or not. " +
+							"Overrides JSON/saved devMode; defaults to 'yes' when not configured.",
 					},
 					{
 						Key:  "force",
@@ -488,7 +528,12 @@ func localnetCommand() *cli.Command {
 							return clierr.New("%s", err)
 						}
 					}
-					return runStart(name, hasName, configPath, ctx.Bool("dev"), ctx.Bool("force"), ctx.Bool("check"), localnetConfig)
+					var devOverride *bool
+					if value, supplied := ctx.Value("dev"); supplied {
+						dev := value.(bool)
+						devOverride = &dev
+					}
+					return runStart(name, hasName, configPath, devOverride, ctx.Bool("force"), ctx.Bool("check"), localnetConfig)
 				},
 			},
 			{

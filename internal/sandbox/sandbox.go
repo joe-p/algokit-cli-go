@@ -116,6 +116,7 @@ type ComposeSandbox struct {
 	Name      string
 	Directory string
 	Source    *AlgodSource
+	Settings  NetworkSettings
 }
 
 // New returns the sandbox with the given name (BaseName for the default) in configPath (default: the app config
@@ -136,6 +137,9 @@ func New(name, configPath string) (*ComposeSandbox, error) {
 		}
 	}
 	if err := s.loadSource(); err != nil {
+		return nil, err
+	}
+	if err := s.loadNetworkSettings(); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -254,7 +258,11 @@ func (s *ComposeSandbox) ComposeFileStatus() (ComposeFileStatus, error) {
 		// If config files are corrupted or malformed, treat as out of date
 		return OutOfDate, nil
 	}
-	latest, err := parseNetworkTemplate(AlgodNetworkTemplate())
+	expected, err := networkTemplateWithSettings(AlgodNetworkTemplate(), s.Settings)
+	if err != nil {
+		return OutOfDate, err
+	}
+	latest, err := parseNetworkTemplate(expected)
 	if err != nil {
 		return OutOfDate, err
 	}
@@ -266,11 +274,15 @@ func (s *ComposeSandbox) ComposeFileStatus() (ComposeFileStatus, error) {
 
 // WriteComposeFile writes out the latest LocalNet definition.
 func (s *ComposeSandbox) WriteComposeFile() error {
+	networkTemplate, err := networkTemplateWithSettings(AlgodNetworkTemplate(), s.Settings)
+	if err != nil {
+		return err
+	}
 	files := []struct{ path, content string }{
 		{s.ConduitFilePath(), ConduitYAML()},
 		{s.ComposeFilePath(), s.latestYAML()},
 		{s.AlgodConfigFilePath(), ConfigJSON()},
-		{s.AlgodNetworkTemplateFilePath(), AlgodNetworkTemplate()},
+		{s.AlgodNetworkTemplateFilePath(), networkTemplate},
 	}
 	for _, f := range files {
 		if err := os.WriteFile(f.path, []byte(f.content), 0o644); err != nil {

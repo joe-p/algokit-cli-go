@@ -35,11 +35,11 @@ func TestLocalnetAlgodSource(t *testing.T) {
 		repo   string
 		ref    string
 	}{
-		{"branch", `{"algod":{"ref":"feature/test"}}`, sandbox.DefaultAlgodRepo, "feature/test"},
-		{"tag", `{"algod":{"ref":"v4.0.0-stable"}}`, sandbox.DefaultAlgodRepo, "v4.0.0-stable"},
-		{"commit", `{"algod":{"ref":"0123456789abcdef0123456789abcdef01234567"}}`, sandbox.DefaultAlgodRepo, "0123456789abcdef0123456789abcdef01234567"},
-		{"fork", `{"algod":{"repo":"https://example.com/fork.git"}}`, "https://example.com/fork.git", sandbox.DefaultAlgodRef},
-		{"both", `{"algod":{"repo":"https://example.com/fork.git","ref":"feature/test"}}`, "https://example.com/fork.git", "feature/test"},
+		{"branch", `{"algodSource":{"ref":"feature/test"}}`, sandbox.DefaultAlgodRepo, "feature/test"},
+		{"tag", `{"algodSource":{"ref":"v4.0.0-stable"}}`, sandbox.DefaultAlgodRepo, "v4.0.0-stable"},
+		{"commit", `{"algodSource":{"ref":"0123456789abcdef0123456789abcdef01234567"}}`, sandbox.DefaultAlgodRepo, "0123456789abcdef0123456789abcdef01234567"},
+		{"fork", `{"algodSource":{"repo":"https://example.com/fork.git"}}`, "https://example.com/fork.git", sandbox.DefaultAlgodRef},
+		{"both", `{"algodSource":{"repo":"https://example.com/fork.git","ref":"feature/test"}}`, "https://example.com/fork.git", "feature/test"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := setupLocalnet(t)
@@ -108,11 +108,11 @@ func TestLocalnetAlgodSourceUpdatesKeepCustomConfiguration(t *testing.T) {
 	env := setupLocalnet(t)
 	env.MockNoRunningLocalnet()
 	env.MockHealthSuccess()
-	configPath := localnetConfigFile(env, `{"algod":{"repo":"https://example.com/fork.git","ref":"first"}}`)
+	configPath := localnetConfigFile(env, `{"algodSource":{"repo":"https://example.com/fork.git","ref":"first"}}`)
 	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--localnet-config", configPath), 0)
 	path := filepath.Join(env.SandboxDir("sandbox_source"), "docker-compose.yml")
 	env.WriteFile(path, env.ReadFile(path)+"\n# custom configuration\n")
-	configPath = localnetConfigFile(env, `{"algod":{"ref":"second"}}`)
+	configPath = localnetConfigFile(env, `{"algodSource":{"ref":"second"}}`)
 	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--localnet-config", configPath), 0)
 	assertContains(t, env.ReadFile(path), "# custom configuration")
 	builds := sourceBuilds(env)
@@ -132,7 +132,7 @@ func TestLocalnetAlgodSourceBuildFailurePreservesConfiguration(t *testing.T) {
 	env.MockHealthSuccess()
 	env.WriteLatestCompose("sandbox")
 	env.Proc.BadExit("docker build")
-	configPath := localnetConfigFile(env, `{"algod":{"ref":"missing"}}`)
+	configPath := localnetConfigFile(env, `{"algodSource":{"ref":"missing"}}`)
 	result := env.Invoke("", "localnet", "start", "--localnet-config", configPath)
 	assertExitCode(t, result, 1)
 	assertContains(t, result.Output, "Failed to build algod from source")
@@ -152,7 +152,7 @@ func TestLocalnetAlgodSourceReset(t *testing.T) {
 				env := setupLocalnet(t)
 				env.MockNoRunningLocalnet()
 				env.MockHealthSuccess()
-				configPath := localnetConfigFile(env, `{"algod":{"ref":"feature/test"}}`)
+				configPath := localnetConfigFile(env, `{"algodSource":{"ref":"feature/test"}}`)
 				args := []string{"localnet", "start", "--localnet-config", configPath}
 				fullName := "sandbox"
 				if name != "sandbox" {
@@ -187,7 +187,7 @@ func TestLocalnetAlgodSourceUsesPodman(t *testing.T) {
 	env.Proc.Set("podman compose version --format json", []string{`{"version": "1.0.6"}`}, 0)
 	env.Proc.Set("podman compose ls", []string{"[]"}, 0)
 	env.MockHealthSuccess()
-	configPath := localnetConfigFile(env, `{"algod":{"ref":"master"}}`)
+	configPath := localnetConfigFile(env, `{"algodSource":{"ref":"master"}}`)
 	assertExitCode(t, env.Invoke("", "localnet", "start", "--localnet-config", configPath), 0)
 	builds := sourceBuilds(env)
 	if len(builds) != 1 || builds[0].Command[0] != "podman" {
@@ -214,7 +214,7 @@ func TestLocalnetAlgodSourceRejectsCustomizedImage(t *testing.T) {
 	path := filepath.Join(env.SandboxDir("sandbox"), "docker-compose.yml")
 	custom := strings.Replace(env.ReadFile(path), "image: "+sandbox.AlgorandImage, "image: custom:latest", 1)
 	env.WriteFile(path, custom)
-	configPath := localnetConfigFile(env, `{"algod":{"ref":"master"}}`)
+	configPath := localnetConfigFile(env, `{"algodSource":{"ref":"master"}}`)
 	result := env.Invoke("", "localnet", "start", "--localnet-config", configPath)
 	assertExitCode(t, result, 1)
 	assertContains(t, result.Output, "algod image definition has been customized")
@@ -227,7 +227,7 @@ func TestLocalnetConfigRelativePath(t *testing.T) {
 	env := setupLocalnet(t)
 	env.MockNoRunningLocalnet()
 	env.MockHealthSuccess()
-	path := localnetConfigFile(env, `{"algod":{"ref":"feature/test"}}`)
+	path := localnetConfigFile(env, `{"algodSource":{"ref":"feature/test"}}`)
 	assertExitCode(t, env.Invoke(env.Root, "localnet", "start", "--name", "foo", "--localnet-config", filepath.Base(path)), 0)
 	if len(sourceBuilds(env)) != 1 {
 		t.Fatal("relative config path did not trigger a build")
@@ -236,12 +236,17 @@ func TestLocalnetConfigRelativePath(t *testing.T) {
 
 func TestLocalnetConfigValidationBeforeChanges(t *testing.T) {
 	for _, content := range []string{
-		`{`, `null`, `[]`, `{}`, `{"algod":null}`, `{"algod":{}}`,
-		`{"algod":{"repo":""}}`, `{"algod":{"ref":" "}}`,
-		`{"algod":{"repo":"https://example.com/fork.git","ref":""}}`,
-		`{"algod":{"ref":123}}`, `{"algod":"master"}`,
-		`{"algod":{"reff":"master"}}`, `{"algod":{"ref":"master"},"unknown":true}`,
-		`{"algod":{"ref":"master"}} {}`, `{"algod":{"ref":"master"}} trailing`,
+		`{`, `null`, `[]`, `{}`, `{"algodSource":null}`, `{"algodSource":{}}`,
+		`{"algodSource":{"repo":""}}`, `{"algodSource":{"ref":" "}}`,
+		`{"algodSource":{"repo":"https://example.com/fork.git","ref":""}}`,
+		`{"algodSource":{"ref":123}}`, `{"algodSource":"master"}`,
+		`{"algod":{"ref":"master"}}`, `{"algod_source":{"ref":"master"}}`,
+		`{"devMode":"false"}`, `{"devMode":0}`, `{"devMode":null}`,
+		`{"vFuture":"true"}`, `{"vFuture":1}`, `{"vFuture":null}`,
+		`{"algodSource":{"ref":"master"},"devMode":null}`,
+		`{"devMode":true,"vFuture":[]}`,
+		`{"algodSource":{"reff":"master"}}`, `{"algodSource":{"ref":"master"},"unknown":true}`,
+		`{"algodSource":{"ref":"master"}} {}`, `{"algodSource":{"ref":"master"}} trailing`,
 	} {
 		t.Run(content, func(t *testing.T) {
 			env := setupLocalnet(t)
