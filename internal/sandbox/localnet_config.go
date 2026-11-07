@@ -11,6 +11,7 @@ import (
 // LocalnetConfig contains user-supplied LocalNet settings. Settings are saved
 // with the instance, so the input file is not needed on later starts.
 type LocalnetConfig struct {
+	Name          *string        `json:"name,omitempty"`
 	AlgodSource   *AlgodSource   `json:"algodSource,omitempty"`
 	IndexerSource *ServiceSource `json:"indexerSource,omitempty"`
 	ConduitSource *ServiceSource `json:"conduitSource,omitempty"`
@@ -35,6 +36,7 @@ func ReadLocalnetConfig(path string) (*LocalnetConfig, error) {
 		Image json.RawMessage `json:"image"`
 	}
 	var input struct {
+		Name    json.RawMessage `json:"name"`
 		Algod   *sourceConfig   `json:"algodSource"`
 		Indexer *sourceConfig   `json:"indexerSource"`
 		Conduit *sourceConfig   `json:"conduitSource"`
@@ -53,6 +55,16 @@ func ReadLocalnetConfig(path string) (*LocalnetConfig, error) {
 		return invalid(fmt.Errorf("expected a single JSON object"))
 	}
 	config := &LocalnetConfig{}
+	if len(input.Name) != 0 {
+		var value string
+		if string(input.Name) == "null" || json.Unmarshal(input.Name, &value) != nil {
+			return invalid(fmt.Errorf("name must be a string"))
+		}
+		if strings.TrimSpace(value) == "" {
+			return invalid(fmt.Errorf("name must not be blank"))
+		}
+		config.Name = &value
+	}
 	for _, field := range []struct {
 		name   string
 		value  json.RawMessage
@@ -116,8 +128,8 @@ func ReadLocalnetConfig(path string) (*LocalnetConfig, error) {
 		}
 		*service.target = source
 	}
-	if config.AlgodSource == nil && config.IndexerSource == nil && config.ConduitSource == nil && config.DevMode == nil && config.VFuture == nil {
-		return invalid(fmt.Errorf("config must contain algodSource, indexerSource, conduitSource, devMode, or vFuture"))
+	if config.Name == nil && config.AlgodSource == nil && config.IndexerSource == nil && config.ConduitSource == nil && config.DevMode == nil && config.VFuture == nil {
+		return invalid(fmt.Errorf("config must contain name, algodSource, indexerSource, conduitSource, devMode, or vFuture"))
 	}
 	return config, nil
 }

@@ -47,18 +47,22 @@ byte, otherwise the Python CLI considers the LocalNet definition out of date (an
 Load settings from a JSON file:
 
 ```sh
-algokit localnet start --name foo --config config.json
+algokit localnet start --config config.json
 ```
 
-For example, `config.json` can toggle developer mode and the experimental consensus protocol without building an image:
+For example, `config.json` can select a named LocalNet and toggle developer mode and the experimental consensus
+protocol without building an image:
 
 ```json
 {
+  "name": "foo",
   "devMode": true,
   "vFuture": true
 }
 ```
 
+- `name`: selects a named LocalNet instance, equivalent to `--name`. An explicit `--name` takes precedence. Without
+  either, the default LocalNet is used.
 - `devMode`: enables developer mode (`true` by default).
 - `vFuture`: selects the `"future"` genesis consensus protocol when `true`; `false` uses algod's default protocol.
   Defaults to `false`. This is independent of developer mode and may enable experimental, unstable behavior.
@@ -70,7 +74,7 @@ configuration and survive subsequent starts and resets, including configuration 
 
 Unknown fields, invalid booleans (including `null`), and invalid JSON are rejected before changing LocalNet. Relative
 configuration paths resolve from the current working directory; `--config-dir` separately controls where LocalNet
-state is stored. At least one toggle or service selection must be provided.
+state is stored. At least one setting must be provided.
 
 ### Using prebuilt images
 

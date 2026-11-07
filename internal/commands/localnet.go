@@ -505,7 +505,7 @@ func localnetCommand() *cli.Command {
 						Kind:    cli.Value,
 						Metavar: "FILE",
 						Help: "Load LocalNet settings from a JSON file. " +
-							"Accepts devMode/vFuture toggles and algodSource, indexerSource, or conduitSource objects with repo/ref or image. " +
+							"Accepts a name, devMode/vFuture toggles, and algodSource, indexerSource, or conduitSource objects with repo/ref or image. " +
 							"Settings are saved per LocalNet; only repo/ref selections build an image.",
 					},
 					configDirOption("Specify the custom localnet configuration directory. Defaults to '~/.config' " +
@@ -538,6 +538,9 @@ func localnetCommand() *cli.Command {
 						localnetConfig, err = sandbox.ReadLocalnetConfig(path)
 						if err != nil {
 							return clierr.New("%s", err)
+						}
+						if localnetConfig.Name != nil && !hasName {
+							name, hasName = *localnetConfig.Name, true
 						}
 					}
 					var devOverride *bool
