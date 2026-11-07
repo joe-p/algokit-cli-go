@@ -197,9 +197,20 @@ func runStart(name string, hasName bool, configPath string, devOverride *bool, f
 	if err != nil {
 		return err
 	}
-	if localnetConfig != nil && localnetConfig.AlgodSource != nil {
-		if err := sb.ConfigureAlgodSource(localnetConfig.AlgodSource.Repo, localnetConfig.AlgodSource.Ref); err != nil {
-			return err
+	if localnetConfig != nil {
+		for _, service := range []struct {
+			name   string
+			source *sandbox.ServiceSource
+		}{
+			{"algod", localnetConfig.AlgodSource},
+			{"indexer", localnetConfig.IndexerSource},
+			{"conduit", localnetConfig.ConduitSource},
+		} {
+			if service.source != nil {
+				if err := sb.ConfigureService(service.name, *service.source); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	status, err := sb.ComposeFileStatus()
@@ -494,7 +505,8 @@ func localnetCommand() *cli.Command {
 						Kind:    cli.Value,
 						Metavar: "FILE",
 						Help: "Load LocalNet settings from a JSON file. " +
-							"Accepts devMode/vFuture toggles and an algodSource object with repo/ref. Settings are saved per LocalNet; specifying algodSource rebuilds its image.",
+							"Accepts devMode/vFuture toggles and algodSource, indexerSource, or conduitSource objects with repo/ref or image. " +
+							"Settings are saved per LocalNet; only repo/ref selections build an image.",
 					},
 					configDirOption("Specify the custom localnet configuration directory. Defaults to '~/.config' " +
 						`on UNIX and 'C:\\Users\\USERNAME\\AppData\\Roaming' on Windows.`),

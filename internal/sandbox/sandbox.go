@@ -113,10 +113,12 @@ func (s ServiceInfo) State() string   { return s.str("State") }
 
 // ComposeSandbox is a LocalNet docker compose project in a directory.
 type ComposeSandbox struct {
-	Name      string
-	Directory string
-	Source    *AlgodSource
-	Settings  NetworkSettings
+	Name          string
+	Directory     string
+	Source        *AlgodSource
+	IndexerSource *ServiceSource
+	ConduitSource *ServiceSource
+	Settings      NetworkSettings
 }
 
 // New returns the sandbox with the given name (BaseName for the default) in configPath (default: the app config
@@ -136,7 +138,7 @@ func New(name, configPath string) (*ComposeSandbox, error) {
 			return nil, err
 		}
 	}
-	if err := s.loadSource(); err != nil {
+	if err := s.loadSources(); err != nil {
 		return nil, err
 	}
 	if err := s.loadNetworkSettings(); err != nil {
@@ -157,8 +159,11 @@ func (s *ComposeSandbox) AlgodNetworkTemplateFilePath() string {
 }
 
 func (s *ComposeSandbox) latestYAML() string {
-	return strings.Replace(DockerComposeYAML("algokit_"+s.Name),
-		"    image: "+AlgorandImage, s.algodImageDefinition(), 1)
+	compose := DockerComposeYAML("algokit_" + s.Name)
+	for _, spec := range s.sourceSpecs() {
+		compose = strings.Replace(compose, "    image: "+spec.image, spec.imageDefinition(), 1)
+	}
+	return compose
 }
 
 // FromEnvironment finds the currently running AlgoKit LocalNet (if any).
@@ -345,11 +350,21 @@ func (s *ComposeSandbox) Down() error {
 func (s *ComposeSandbox) Pull() error {
 	logger.Info("Fetching any container updates from DockerHub...")
 	services := ""
-	if s.Source != nil {
-		if err := s.RebuildAlgod(); err != nil {
+	if s.hasSources() {
+		if err := s.RebuildSources(); err != nil {
 			return err
 		}
-		services = " conduit indexer-db indexer"
+		for _, name := range []string{"algod", "conduit", "indexer-db", "indexer"} {
+			local := false
+			for _, spec := range s.sourceSpecs() {
+				if spec.name == name && spec.buildsImage() {
+					local = true
+				}
+			}
+			if !local {
+				services += " " + name
+			}
+		}
 	}
 	if _, err := s.runComposeCommand("pull --ignore-pull-failures --quiet"+services, log.Info, ""); err != nil {
 		return err
@@ -458,8 +473,8 @@ func IsImageUpToDate(imageName string) bool {
 // CheckForNewImageVersions warns if newer LocalNet images are available, checking Docker Hub at most once a week
 // unless force is set.
 func (s *ComposeSandbox) CheckForNewImageVersions(force bool) {
-	// Published-image checks do not describe a source-built LocalNet.
-	if s.Source != nil {
+	// Default-image checks do not describe custom source/image selections.
+	if s.hasSources() {
 		return
 	}
 	var state imageVersionCache

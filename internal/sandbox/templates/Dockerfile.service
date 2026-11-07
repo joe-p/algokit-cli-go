@@ -1,0 +1,36 @@
+# Build a remote Indexer or LocalNet Conduit checkout with its pinned Go version.
+FROM debian:trixie-slim AS builder
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git && \
+    rm -rf /var/lib/apt/lists/*
+ARG SOURCE_REPO
+ARG SOURCE_REF
+ARG BUILD_NONCE
+RUN test -n "$BUILD_NONCE" && git init /src && \
+    git -C /src remote add origin "$SOURCE_REPO" && \
+    git -C /src fetch --depth=1 -- origin "$SOURCE_REF" && \
+    git -C /src checkout --detach FETCH_HEAD && git -C /src rev-parse HEAD
+WORKDIR /src
+RUN GO_VERSION="$(awk '$1 == "toolchain" { sub(/^go/, "", $2); print $2 }' go.mod)" && \
+    if [ -z "$GO_VERSION" ]; then GO_VERSION="$(awk '$1 == "go" { print $2 }' go.mod)"; fi && \
+    test -n "$GO_VERSION" && ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
+    curl --fail --location "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" -o /go.tar.gz && \
+    tar -C /usr/local -xzf /go.tar.gz && rm /go.tar.gz
+ENV PATH=/usr/local/go/bin:${PATH} CGO_ENABLED=0
+RUN {{GENERATE}} && mkdir -p /out && \
+    go build -trimpath -o /out/{{BINARY}} ./cmd/{{BINARY}} && \
+    cp docker/docker-entrypoint.sh /out/docker-entrypoint.sh && \
+    chmod 755 /out/docker-entrypoint.sh
+{{VALIDATE}}
+
+FROM debian:trixie-slim
+RUN groupadd --gid=999 --system algorand && \
+    useradd --uid=999 --no-log-init --create-home --system --gid algorand algorand && \
+    mkdir -p /data && chown -R algorand:algorand /data && \
+    apt-get update && apt-get install -y --no-install-recommends gosu ca-certificates && \
+    update-ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /out/{{BINARY}} /usr/local/bin/{{BINARY}}
+COPY --from=builder /out/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+ENV {{DATA_ENV}}=/data
+WORKDIR /data
+ENTRYPOINT ["docker-entrypoint.sh"]

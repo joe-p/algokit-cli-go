@@ -11,9 +11,11 @@ import (
 // LocalnetConfig contains user-supplied LocalNet settings. Settings are saved
 // with the instance, so the input file is not needed on later starts.
 type LocalnetConfig struct {
-	AlgodSource *AlgodSource `json:"algodSource,omitempty"`
-	DevMode     *bool        `json:"devMode,omitempty"`
-	VFuture     *bool        `json:"vFuture,omitempty"`
+	AlgodSource   *AlgodSource   `json:"algodSource,omitempty"`
+	IndexerSource *ServiceSource `json:"indexerSource,omitempty"`
+	ConduitSource *ServiceSource `json:"conduitSource,omitempty"`
+	DevMode       *bool          `json:"devMode,omitempty"`
+	VFuture       *bool          `json:"vFuture,omitempty"`
 }
 
 // ReadLocalnetConfig validates the entire file before any LocalNet is changed.
@@ -27,11 +29,15 @@ func ReadLocalnetConfig(path string) (*LocalnetConfig, error) {
 
 	// Pointers distinguish omitted fields from explicitly blank values. Raw
 	// booleans let us reject null as well as strings and numbers.
+	type sourceConfig struct {
+		Repo  *string         `json:"repo"`
+		Ref   *string         `json:"ref"`
+		Image json.RawMessage `json:"image"`
+	}
 	var input struct {
-		Algod *struct {
-			Repo *string `json:"repo"`
-			Ref  *string `json:"ref"`
-		} `json:"algodSource"`
+		Algod   *sourceConfig   `json:"algodSource"`
+		Indexer *sourceConfig   `json:"indexerSource"`
+		Conduit *sourceConfig   `json:"conduitSource"`
 		DevMode json.RawMessage `json:"devMode"`
 		VFuture json.RawMessage `json:"vFuture"`
 	}
@@ -63,30 +69,55 @@ func ReadLocalnetConfig(path string) (*LocalnetConfig, error) {
 			*field.target = &value
 		}
 	}
-	if input.Algod != nil {
-		if input.Algod.Repo == nil && input.Algod.Ref == nil {
-			return invalid(fmt.Errorf("algodSource must contain repo or ref"))
+	for _, service := range []struct {
+		name   string
+		input  *sourceConfig
+		target **ServiceSource
+	}{
+		{"algodSource", input.Algod, &config.AlgodSource},
+		{"indexerSource", input.Indexer, &config.IndexerSource},
+		{"conduitSource", input.Conduit, &config.ConduitSource},
+	} {
+		if service.input == nil {
+			continue
 		}
-		source := &AlgodSource{}
+		if len(service.input.Image) != 0 {
+			if service.input.Repo != nil || service.input.Ref != nil {
+				return invalid(fmt.Errorf("%s.image cannot be combined with repo or ref", service.name))
+			}
+			var image string
+			if err := json.Unmarshal(service.input.Image, &image); err != nil {
+				return invalid(fmt.Errorf("%s.image must be a string", service.name))
+			}
+			if err := validateServiceImage(image); err != nil {
+				return invalid(fmt.Errorf("%s: %w", service.name, err))
+			}
+			*service.target = &ServiceSource{Image: image}
+			continue
+		}
+		if service.input.Repo == nil && service.input.Ref == nil {
+			return invalid(fmt.Errorf("%s must contain repo or ref, or image", service.name))
+		}
+		source := &ServiceSource{}
 		for _, field := range []struct {
 			name   string
 			value  *string
 			target *string
 		}{
-			{"repo", input.Algod.Repo, &source.Repo},
-			{"ref", input.Algod.Ref, &source.Ref},
+			{"repo", service.input.Repo, &source.Repo},
+			{"ref", service.input.Ref, &source.Ref},
 		} {
 			if field.value != nil {
 				if strings.TrimSpace(*field.value) == "" {
-					return invalid(fmt.Errorf("algodSource.%s must not be blank", field.name))
+					return invalid(fmt.Errorf("%s.%s must not be blank", service.name, field.name))
 				}
 				*field.target = *field.value
 			}
 		}
-		config.AlgodSource = source
+		*service.target = source
 	}
-	if config.AlgodSource == nil && config.DevMode == nil && config.VFuture == nil {
-		return invalid(fmt.Errorf("config must contain algodSource, devMode, or vFuture"))
+	if config.AlgodSource == nil && config.IndexerSource == nil && config.ConduitSource == nil && config.DevMode == nil && config.VFuture == nil {
+		return invalid(fmt.Errorf("config must contain algodSource, indexerSource, conduitSource, devMode, or vFuture"))
 	}
 	return config, nil
 }

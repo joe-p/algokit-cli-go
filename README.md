@@ -70,18 +70,51 @@ configuration and survive subsequent starts and resets, including configuration 
 
 Unknown fields, invalid booleans (including `null`), and invalid JSON are rejected before changing LocalNet. Relative
 configuration paths resolve from the current working directory; `--config-dir` separately controls where LocalNet
-state is stored. At least one of `devMode`, `vFuture`, or `algodSource` must be provided.
+state is stored. At least one toggle or service selection must be provided.
 
-### Building algod from source
+### Using prebuilt images
 
-Optionally include an `algodSource` object to build from a remote go-algorand branch, tag, or full commit SHA. It can be
-combined with either toggle above. For example:
+Each service object accepts `image` as an alternative to building from `repo`/`ref`:
+
+```json
+{
+  "algodSource": { "image": "algorand/algod:beta" },
+  "indexerSource": { "image": "my-registry/indexer:dev" },
+  "conduitSource": { "image": "algorandfoundation/conduit-localnet:latest" }
+}
+```
+
+Use the same `--localnet-config config.json` command. An image can be a local tag, registry reference, or digest-pinned
+reference. Image selection never builds from source; normal Compose cache/pull behavior applies when starting it.
+`image` cannot be combined with `repo` or `ref` in the same object. Image references must be nonblank, with no
+whitespace or `$` interpolation. The container engine validates the complete reference syntax.
+
+Image selections are saved per LocalNet, survive resets/configuration regeneration, and can be mixed with source
+builds for other services. `reset --update` pulls selected prebuilt images and rebuilds only source-based services.
+Switching from a source to an image clears that service's saved repo/ref. Switching back to repo/ref starts from
+the service's default source settings rather than restoring the previously selected source.
+
+Custom images must satisfy LocalNet's existing runtime contracts: algod's startup/config mounts and KMD support,
+Indexer's daemon/environment configuration, and Conduit's `localnet_algod` importer and configuration mount.
+
+### Building services from source
+
+Optionally include `algodSource`, `indexerSource`, or `conduitSource` objects to build services from remote branches,
+tags, or full commit SHAs. Each service is independent and can be combined with either toggle above. For example:
 
 ```json
 {
   "algodSource": {
     "repo": "https://github.com/algorand/go-algorand.git",
     "ref": "feature/my-change"
+  },
+  "indexerSource": {
+    "repo": "https://github.com/algorand/indexer.git",
+    "ref": "main"
+  },
+  "conduitSource": {
+    "repo": "https://github.com/algorandfoundation/algokit-conduit-localnet-importer.git",
+    "ref": "main"
   }
 }
 ```
@@ -90,18 +123,29 @@ combined with either toggle above. For example:
 algokit localnet start --name foo --localnet-config config.json
 ```
 
-Use `algodSource.repo` to select a fork. When `algodSource` is included, at least one of
-`algodSource.repo` or `algodSource.ref` must be supplied;
-omitted fields retain saved values, or default to upstream go-algorand and `master` on first use. Blank values are rejected.
+For source builds, each service object accepts `repo` and `ref`, with at least one required. Omitted fields retain saved values, or use
+these defaults on first use:
 
-Including `algodSource` in `--localnet-config` builds a local image before starting LocalNet. A toggle-only configuration
-reuses the existing image. Builds run entirely in the configured container engine, using an embedded Dockerfile and
-the selected checkout's Go toolchain version and runtime scripts. No host Git or Go installation is needed. The repository must be accessible from inside the build without host credentials;
+| Property | Default repository | Default ref |
+| --- | --- | --- |
+| `algodSource` | `algorand/go-algorand` | `master` |
+| `indexerSource` | `algorand/indexer` | `main` |
+| `conduitSource` | `algorandfoundation/algokit-conduit-localnet-importer` | `main` |
+
+Set `repo` to select a fork. Blank values and unknown source fields are rejected. Conduit builds must register the
+`localnet_algod` importer used by LocalNet's pipeline configuration; plain `algorand/conduit` does not include it.
+The build validates this importer and fails with a diagnostic if it is missing.
+
+Including a repo/ref selection in `--localnet-config` builds that service's image before starting LocalNet. Omitted services and
+toggle-only configurations reuse their existing images. Builds run entirely in the configured container engine,
+using embedded Dockerfiles and the selected checkouts' Go toolchain versions and runtime scripts. No host Git or Go
+installation is needed. Repositories must be accessible from inside the build without host credentials;
 private-repository authentication is not currently configured. Only build repositories you trust: their build
 scripts run inside the container build.
 
-The effective repository and ref are saved in `algod-source.json` in the LocalNet configuration directory. Starting
-again without `--localnet-config` reuses the image and does not need the original JSON file:
+Effective image/source selections are saved in `algod-source.json`, `indexer-source.json`, and `conduit-source.json` in
+the LocalNet configuration directory. Starting again without `--localnet-config` reuses these images and does not
+need the original JSON file:
 
 ```sh
 algokit localnet start --name foo
@@ -110,10 +154,10 @@ algokit localnet start --name foo
 algokit localnet start --name foo --localnet-config config.json
 ```
 
-Ordinary `localnet reset` reuses the image; `localnet reset --update` rebuilds the saved ref and updates the other
-service images. A reset destroys chain state. As before, `reset --update` on a named instance prompts before
+Ordinary `localnet reset` reuses the images; `localnet reset --update` rebuilds all saved source refs and pulls only
+the other service images. A reset destroys chain state. As before, `reset --update` on a named instance prompts before
 replacing its Compose configuration, but keeps the saved source selection and network toggles. Source-built LocalNets do not perform
-published-image version checks and never pull over the locally built algod image.
+default published-image version checks and never pull over source-built service images.
 
 Named instances are recommended, especially when sharing configuration with the Python CLI, which does not
 understand these source settings. Older refs must still provide a compatible build-script and runtime layout.

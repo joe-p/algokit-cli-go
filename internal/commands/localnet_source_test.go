@@ -241,6 +241,7 @@ func TestLocalnetConfigValidationBeforeChanges(t *testing.T) {
 		`{"algodSource":{"repo":"https://example.com/fork.git","ref":""}}`,
 		`{"algodSource":{"ref":123}}`, `{"algodSource":"master"}`,
 		`{"algod":{"ref":"master"}}`, `{"algod_source":{"ref":"master"}}`,
+		`{"indexer_source":{"ref":"main"}}`, `{"conduit_source":{"ref":"main"}}`,
 		`{"devMode":"false"}`, `{"devMode":0}`, `{"devMode":null}`,
 		`{"vFuture":"true"}`, `{"vFuture":1}`, `{"vFuture":null}`,
 		`{"algodSource":{"ref":"master"},"devMode":null}`,
