@@ -501,7 +501,7 @@ func localnetCommand() *cli.Command {
 					},
 					{
 						Key:     "localnet_config",
-						Opts:    []string{"--localnet-config"},
+						Opts:    []string{"--config"},
 						Kind:    cli.Value,
 						Metavar: "FILE",
 						Help: "Load LocalNet settings from a JSON file. " +
@@ -532,7 +532,7 @@ func localnetCommand() *cli.Command {
 					var localnetConfig *sandbox.LocalnetConfig
 					if path, supplied := ctx.String("localnet_config"); supplied {
 						if strings.TrimSpace(path) == "" {
-							return clierr.New("--localnet-config must not be blank")
+							return clierr.New("--config must not be blank")
 						}
 						var err error
 						localnetConfig, err = sandbox.ReadLocalnetConfig(path)

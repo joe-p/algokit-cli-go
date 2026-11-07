@@ -27,7 +27,7 @@ func TestLocalnetPrebuiltImages(t *testing.T) {
 				env.MockHealthSuccess()
 				data, _ := json.Marshal(map[string]any{service.key: map[string]string{"image": image}})
 				path := localnetConfigFile(env, string(data))
-				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path), 0)
+				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--config", path), 0)
 				if len(sourceBuilds(env)) != 0 {
 					t.Fatal("image selection triggered a source build")
 				}
@@ -65,10 +65,10 @@ func TestLocalnetSwitchBetweenImageAndSource(t *testing.T) {
 			env.MockNoRunningLocalnet()
 			env.MockHealthSuccess()
 			path := localnetConfigFile(env, fmt.Sprintf(`{"%s":{"repo":"https://example.com/fork.git","ref":"branch"}}`, service.key))
-			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path), 0)
+			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--config", path), 0)
 			for _, image := range []string{"custom:first", "custom:second"} {
 				path = localnetConfigFile(env, fmt.Sprintf(`{"%s":{"image":%q}}`, service.key, image))
-				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path), 0)
+				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--config", path), 0)
 				compose := env.ReadFile(filepath.Join(env.SandboxDir("sandbox_test"), "docker-compose.yml"))
 				assertContains(t, compose, fmt.Sprintf("image: %q", image))
 				assertNotContains(t, compose, "pull_policy: never")
@@ -77,7 +77,7 @@ func TestLocalnetSwitchBetweenImageAndSource(t *testing.T) {
 				t.Fatal("switching to prebuilt images built a source")
 			}
 			path = localnetConfigFile(env, fmt.Sprintf(`{"%s":{"ref":"next"}}`, service.key))
-			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path), 0)
+			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--config", path), 0)
 			builds := sourceBuilds(env)
 			if len(builds) != 2 {
 				t.Fatalf("switching back to source did not build: %v", builds)
@@ -117,7 +117,7 @@ func TestLocalnetMixedImageSourceUpdates(t *testing.T) {
 				}
 				data, _ := json.Marshal(config)
 				path := localnetConfigFile(env, string(data))
-				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path), 0)
+				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--config", path), 0)
 				env.MockRunningLocalnet("sandbox_test")
 				args := []string{"localnet", "reset"}
 				if update {
@@ -157,7 +157,7 @@ func TestLocalnetPrebuiltImagesDefaultReset(t *testing.T) {
 	env.MockNoRunningLocalnet()
 	env.MockHealthSuccess()
 	path := localnetConfigFile(env, `{"algodSource":{"image":"custom/algod:dev"},"indexerSource":{"image":"custom/indexer:dev"},"conduitSource":{"image":"custom/conduit:dev"}}`)
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--localnet-config", path), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--config", path), 0)
 	env.MockRunningLocalnet("sandbox")
 	composePath := filepath.Join(env.AppConfigDir(), "sandbox", "docker-compose.yml")
 	env.WriteFile(composePath, "outdated")
@@ -197,7 +197,7 @@ func TestLocalnetRejectsInvalidImageSelection(t *testing.T) {
 				env := setupLocalnet(t)
 				env.MockRunningLocalnet("sandbox")
 				path := localnetConfigFile(env, fmt.Sprintf(`{"%s":%s}`, service.key, value))
-				result := env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path)
+				result := env.Invoke("", "localnet", "start", "--name", "test", "--config", path)
 				assertExitCode(t, result, 1)
 				assertContains(t, result.Output, "invalid LocalNet config")
 				if len(sourceBuilds(env)) != 0 || len(env.ConfirmCalls) != 0 {

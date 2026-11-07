@@ -46,7 +46,7 @@ func TestLocalnetAdditionalServiceSources(t *testing.T) {
 						assertContains(t, dockerfile, "grep -q localnet_algod")
 					}
 				})
-				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path), 0)
+				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--config", path), 0)
 				builds := sourceBuilds(env)
 				if len(builds) != 1 {
 					t.Fatalf("unexpected builds: %v", builds)
@@ -78,7 +78,7 @@ func TestLocalnetAdditionalServiceSources(t *testing.T) {
 				// Updating only ref keeps the saved repository and other services.
 				data, _ = json.Marshal(map[string]any{service.key: map[string]string{"ref": "next"}})
 				path = localnetConfigFile(env, string(data))
-				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path), 0)
+				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--config", path), 0)
 				builds = sourceBuilds(env)
 				if len(builds) != 2 || !slices.Contains(builds[1].Command, "SOURCE_REPO="+repo) || !slices.Contains(builds[1].Command, "SOURCE_REF=next") {
 					t.Errorf("source update lost settings: %v", builds)
@@ -106,7 +106,7 @@ func TestLocalnetServiceSourceCombinations(t *testing.T) {
 				}
 				data, _ := json.Marshal(config)
 				path := localnetConfigFile(env, string(data))
-				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path), 0)
+				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "test", "--config", path), 0)
 				if len(sourceBuilds(env)) != len(selected) {
 					t.Fatalf("incorrect build count: %v", sourceBuilds(env))
 				}
@@ -158,7 +158,7 @@ func TestLocalnetAdditionalSourcesInvalidConfig(t *testing.T) {
 				env := setupLocalnet(t)
 				env.MockRunningLocalnet("sandbox")
 				path := localnetConfigFile(env, fmt.Sprintf(`{"%s":%s}`, key, value))
-				result := env.Invoke("", "localnet", "start", "--name", "test", "--localnet-config", path)
+				result := env.Invoke("", "localnet", "start", "--name", "test", "--config", path)
 				assertExitCode(t, result, 1)
 				assertContains(t, result.Output, "invalid LocalNet config")
 				if len(sourceBuilds(env)) != 0 || len(env.ConfirmCalls) != 0 {
@@ -177,7 +177,7 @@ func TestLocalnetAdditionalSourceBuildFailure(t *testing.T) {
 			env.WriteLatestCompose("sandbox")
 			env.Proc.BadExit("docker build")
 			path := localnetConfigFile(env, fmt.Sprintf(`{"%sSource":{"ref":"missing"}}`, service))
-			result := env.Invoke("", "localnet", "start", "--localnet-config", path)
+			result := env.Invoke("", "localnet", "start", "--config", path)
 			assertExitCode(t, result, 1)
 			assertContains(t, result.Output, "Failed to build "+service+" from source")
 			if got := env.ReadFile(filepath.Join(env.SandboxDir("sandbox"), "docker-compose.yml")); got != sandbox.DockerComposeYAML("algokit_sandbox") {

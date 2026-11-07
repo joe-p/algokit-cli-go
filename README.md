@@ -20,7 +20,7 @@ algokit [-v] [--color/--no-color] <command>
   goal [--console] [--interactive] [GOAL_ARGS...]
   localnet config [docker|podman] [-f]
   localnet start [-n NAME] [-P CONFIG_DIR] [-d/--no-dev] [--force] [--check]
-                 [--localnet-config FILE]
+                 [--config FILE]
   localnet stop
   localnet reset [--update/--no-update] [-P CONFIG_DIR] [--check]
   localnet status [--check]
@@ -47,7 +47,7 @@ byte, otherwise the Python CLI considers the LocalNet definition out of date (an
 Load settings from a JSON file:
 
 ```sh
-algokit localnet start --name foo --localnet-config config.json
+algokit localnet start --name foo --config config.json
 ```
 
 For example, `config.json` can toggle developer mode and the experimental consensus protocol without building an image:
@@ -84,7 +84,7 @@ Each service object accepts `image` as an alternative to building from `repo`/`r
 }
 ```
 
-Use the same `--localnet-config config.json` command. An image can be a local tag, registry reference, or digest-pinned
+Use the same `--config config.json` command. An image can be a local tag, registry reference, or digest-pinned
 reference. Image selection never builds from source; normal Compose cache/pull behavior applies when starting it.
 `image` cannot be combined with `repo` or `ref` in the same object. Image references must be nonblank, with no
 whitespace or `$` interpolation. The container engine validates the complete reference syntax.
@@ -120,7 +120,7 @@ tags, or full commit SHAs. Each service is independent and can be combined with 
 ```
 
 ```sh
-algokit localnet start --name foo --localnet-config config.json
+algokit localnet start --name foo --config config.json
 ```
 
 For source builds, each service object accepts `repo` and `ref`, with at least one required. Omitted fields retain saved values, or use
@@ -136,7 +136,7 @@ Set `repo` to select a fork. Blank values and unknown source fields are rejected
 `localnet_algod` importer used by LocalNet's pipeline configuration; plain `algorand/conduit` does not include it.
 The build validates this importer and fails with a diagnostic if it is missing.
 
-Including a repo/ref selection in `--localnet-config` builds that service's image before starting LocalNet. Omitted services and
+Including a repo/ref selection in `--config` builds that service's image before starting LocalNet. Omitted services and
 toggle-only configurations reuse their existing images. Builds run entirely in the configured container engine,
 using embedded Dockerfiles and the selected checkouts' Go toolchain versions and runtime scripts. No host Git or Go
 installation is needed. Repositories must be accessible from inside the build without host credentials;
@@ -144,14 +144,14 @@ private-repository authentication is not currently configured. Only build reposi
 scripts run inside the container build.
 
 Effective image/source selections are saved in `algod-source.json`, `indexer-source.json`, and `conduit-source.json` in
-the LocalNet configuration directory. Starting again without `--localnet-config` reuses these images and does not
+the LocalNet configuration directory. Starting again without `--config` reuses these images and does not
 need the original JSON file:
 
 ```sh
 algokit localnet start --name foo
 
 # Rebuild using the file's current settings and remote branch tip:
-algokit localnet start --name foo --localnet-config config.json
+algokit localnet start --name foo --config config.json
 ```
 
 Ordinary `localnet reset` reuses the images; `localnet reset --update` rebuilds all saved source refs and pulls only

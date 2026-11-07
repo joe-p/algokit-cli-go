@@ -43,7 +43,7 @@ func TestLocalnetNetworkSettings(t *testing.T) {
 				env.MockNoRunningLocalnet()
 				env.MockHealthSuccess()
 				path := localnetConfigFile(env, fmt.Sprintf(`{"devMode":%t,"vFuture":%t}`, devMode, future))
-				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path), 0)
+				assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--config", path), 0)
 				assertNetworkSettings(t, env, "sandbox_foo", devMode, future)
 				assertRan(t, env, "docker compose down", false)
 				assertRan(t, env, "docker compose up --detach --quiet-pull --wait", true)
@@ -83,7 +83,7 @@ func TestLocalnetSingleNetworkSetting(t *testing.T) {
 			env.MockNoRunningLocalnet()
 			env.MockHealthSuccess()
 			path := localnetConfigFile(env, tc.config)
-			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path), 0)
+			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--config", path), 0)
 			assertNetworkSettings(t, env, "sandbox_foo", tc.dev, tc.future)
 			if len(sourceBuilds(env)) != 0 {
 				t.Error("network-only config built an image")
@@ -97,11 +97,11 @@ func TestLocalnetNetworkSettingsToggleAndPreserveOmitted(t *testing.T) {
 	env.MockNoRunningLocalnet()
 	env.MockHealthSuccess()
 	path := localnetConfigFile(env, `{"devMode":false,"vFuture":true}`)
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--config", path), 0)
 	templatePath := filepath.Join(env.AppConfigDir(), "sandbox_foo", "algod_network_template.json")
 	env.WriteFile(templatePath, strings.Replace(env.ReadFile(templatePath), `"RewardsPoolBalance": 0`, `"RewardsPoolBalance": 9007199254740993`, 1))
 	path = localnetConfigFile(env, `{"vFuture":false}`)
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--config", path), 0)
 	assertNetworkSettings(t, env, "sandbox_foo", false, false)
 	assertContains(t, env.ReadFile(templatePath), `"RewardsPoolBalance": 9007199254740993`)
 	assertRan(t, env, "docker compose down", true)
@@ -110,7 +110,7 @@ func TestLocalnetNetworkSettingsToggleAndPreserveOmitted(t *testing.T) {
 	}
 	assertContains(t, env.ConfirmCalls[0].Message, "clearing all chain state")
 	// Reapplying the same settings must not ask to clear state again.
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--config", path), 0)
 	if len(env.ConfirmCalls) != 1 {
 		t.Error("identical settings prompted to recreate the network")
 	}
@@ -123,7 +123,7 @@ func TestLocalnetNetworkSettingsDeclined(t *testing.T) {
 	env.WriteLatestCompose("sandbox_foo")
 	env.ConfirmAnswer = false
 	path := localnetConfigFile(env, `{"devMode":false,"vFuture":true}`)
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--config", path), 0)
 	assertNetworkSettings(t, env, "sandbox_foo", true, false)
 	if _, err := os.Stat(filepath.Join(env.AppConfigDir(), "sandbox_foo", "localnet-settings.json")); !os.IsNotExist(err) {
 		t.Error("declined settings were persisted")
@@ -138,7 +138,7 @@ func TestLocalnetNetworkSettingsForce(t *testing.T) {
 	env.MockHealthSuccess()
 	env.WriteLatestCompose("sandbox_foo")
 	path := localnetConfigFile(env, `{"devMode":false,"vFuture":true}`)
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path, "--force"), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--config", path, "--force"), 0)
 	assertNetworkSettings(t, env, "sandbox_foo", false, true)
 	assertRan(t, env, "docker compose down", true)
 	assertRan(t, env, "docker compose up --detach --quiet-pull --wait", true)
@@ -161,7 +161,7 @@ func TestLocalnetNetworkSettingsCLIOverride(t *testing.T) {
 			env.MockNoRunningLocalnet()
 			env.MockHealthSuccess()
 			path := localnetConfigFile(env, fmt.Sprintf(`{"devMode":%t,"vFuture":true}`, tc.json))
-			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path, tc.flag), 0)
+			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--config", path, tc.flag), 0)
 			assertNetworkSettings(t, env, "sandbox_foo", tc.want, true)
 			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo"), 0)
 			assertNetworkSettings(t, env, "sandbox_foo", tc.want, true)
@@ -177,7 +177,7 @@ func TestLocalnetNetworkSettingsSurviveResetAndRegeneration(t *testing.T) {
 				env.MockNoRunningLocalnet()
 				env.MockHealthSuccess()
 				path := localnetConfigFile(env, `{"devMode":false,"vFuture":true}`)
-				args := []string{"localnet", "start", "--localnet-config", path}
+				args := []string{"localnet", "start", "--config", path}
 				fullName := "sandbox"
 				if name != "sandbox" {
 					args = append(args, "--name", name)
@@ -208,7 +208,7 @@ func TestLocalnetNetworkSettingsWithSource(t *testing.T) {
 	env.MockNoRunningLocalnet()
 	env.MockHealthSuccess()
 	path := localnetConfigFile(env, `{"algodSource":{"ref":"feature/test"},"devMode":false,"vFuture":true}`)
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "foo", "--config", path), 0)
 	assertNetworkSettings(t, env, "sandbox_foo", false, true)
 	if len(sourceBuilds(env)) != 1 {
 		t.Error("combined config did not build algod")

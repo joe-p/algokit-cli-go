@@ -54,7 +54,7 @@ func TestLocalnetAlgodSource(t *testing.T) {
 				assertContains(t, dockerfile, "CMD [\"/node/run/run.sh\"]")
 			})
 			configPath := localnetConfigFile(env, tc.config)
-			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--localnet-config", configPath), 0)
+			assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--config", configPath), 0)
 			builds := sourceBuilds(env)
 			if len(builds) != 1 {
 				t.Fatalf("builds = %v", builds)
@@ -109,18 +109,18 @@ func TestLocalnetAlgodSourceUpdatesKeepCustomConfiguration(t *testing.T) {
 	env.MockNoRunningLocalnet()
 	env.MockHealthSuccess()
 	configPath := localnetConfigFile(env, `{"algodSource":{"repo":"https://example.com/fork.git","ref":"first"}}`)
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--localnet-config", configPath), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--config", configPath), 0)
 	path := filepath.Join(env.SandboxDir("sandbox_source"), "docker-compose.yml")
 	env.WriteFile(path, env.ReadFile(path)+"\n# custom configuration\n")
 	configPath = localnetConfigFile(env, `{"algodSource":{"ref":"second"}}`)
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--localnet-config", configPath), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--config", configPath), 0)
 	assertContains(t, env.ReadFile(path), "# custom configuration")
 	builds := sourceBuilds(env)
 	if len(builds) != 2 || !slices.Contains(builds[1].Command, "ALGOD_REF=second") || !slices.Contains(builds[1].Command, "ALGOD_REPO=https://example.com/fork.git") {
 		t.Fatalf("unexpected builds: %v", builds)
 	}
 	// An explicit repeat refreshes moving branches too.
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--localnet-config", configPath), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--name", "source", "--config", configPath), 0)
 	if len(sourceBuilds(env)) != 3 {
 		t.Fatal("explicit config did not rebuild")
 	}
@@ -133,7 +133,7 @@ func TestLocalnetAlgodSourceBuildFailurePreservesConfiguration(t *testing.T) {
 	env.WriteLatestCompose("sandbox")
 	env.Proc.BadExit("docker build")
 	configPath := localnetConfigFile(env, `{"algodSource":{"ref":"missing"}}`)
-	result := env.Invoke("", "localnet", "start", "--localnet-config", configPath)
+	result := env.Invoke("", "localnet", "start", "--config", configPath)
 	assertExitCode(t, result, 1)
 	assertContains(t, result.Output, "Failed to build algod from source")
 	assertRan(t, env, "docker compose up --detach --quiet-pull --wait", false)
@@ -153,7 +153,7 @@ func TestLocalnetAlgodSourceReset(t *testing.T) {
 				env.MockNoRunningLocalnet()
 				env.MockHealthSuccess()
 				configPath := localnetConfigFile(env, `{"algodSource":{"ref":"feature/test"}}`)
-				args := []string{"localnet", "start", "--localnet-config", configPath}
+				args := []string{"localnet", "start", "--config", configPath}
 				fullName := "sandbox"
 				if name != "sandbox" {
 					args = append(args, "--name", name)
@@ -188,7 +188,7 @@ func TestLocalnetAlgodSourceUsesPodman(t *testing.T) {
 	env.Proc.Set("podman compose ls", []string{"[]"}, 0)
 	env.MockHealthSuccess()
 	configPath := localnetConfigFile(env, `{"algodSource":{"ref":"master"}}`)
-	assertExitCode(t, env.Invoke("", "localnet", "start", "--localnet-config", configPath), 0)
+	assertExitCode(t, env.Invoke("", "localnet", "start", "--config", configPath), 0)
 	builds := sourceBuilds(env)
 	if len(builds) != 1 || builds[0].Command[0] != "podman" {
 		t.Fatalf("unexpected builds: %v", builds)
@@ -215,7 +215,7 @@ func TestLocalnetAlgodSourceRejectsCustomizedImage(t *testing.T) {
 	custom := strings.Replace(env.ReadFile(path), "image: "+sandbox.AlgorandImage, "image: custom:latest", 1)
 	env.WriteFile(path, custom)
 	configPath := localnetConfigFile(env, `{"algodSource":{"ref":"master"}}`)
-	result := env.Invoke("", "localnet", "start", "--localnet-config", configPath)
+	result := env.Invoke("", "localnet", "start", "--config", configPath)
 	assertExitCode(t, result, 1)
 	assertContains(t, result.Output, "algod image definition has been customized")
 	if env.ReadFile(path) != custom || len(sourceBuilds(env)) != 0 {
@@ -228,7 +228,7 @@ func TestLocalnetConfigRelativePath(t *testing.T) {
 	env.MockNoRunningLocalnet()
 	env.MockHealthSuccess()
 	path := localnetConfigFile(env, `{"algodSource":{"ref":"feature/test"}}`)
-	assertExitCode(t, env.Invoke(env.Root, "localnet", "start", "--name", "foo", "--localnet-config", filepath.Base(path)), 0)
+	assertExitCode(t, env.Invoke(env.Root, "localnet", "start", "--name", "foo", "--config", filepath.Base(path)), 0)
 	if len(sourceBuilds(env)) != 1 {
 		t.Fatal("relative config path did not trigger a build")
 	}
@@ -253,7 +253,7 @@ func TestLocalnetConfigValidationBeforeChanges(t *testing.T) {
 			env := setupLocalnet(t)
 			env.MockRunningLocalnet("sandbox")
 			path := localnetConfigFile(env, content)
-			result := env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", path)
+			result := env.Invoke("", "localnet", "start", "--name", "foo", "--config", path)
 			assertExitCode(t, result, 1)
 			assertContains(t, result.Output, "invalid LocalNet config")
 			if len(sourceBuilds(env)) != 0 || len(env.ConfirmCalls) != 0 {
@@ -270,7 +270,7 @@ func TestLocalnetConfigValidationBeforeChanges(t *testing.T) {
 func TestLocalnetConfigMissingFile(t *testing.T) {
 	env := setupLocalnet(t)
 	env.MockRunningLocalnet("sandbox")
-	result := env.Invoke("", "localnet", "start", "--name", "foo", "--localnet-config", filepath.Join(env.Root, "missing.json"))
+	result := env.Invoke("", "localnet", "start", "--name", "foo", "--config", filepath.Join(env.Root, "missing.json"))
 	assertExitCode(t, result, 1)
 	assertContains(t, result.Output, "cannot read LocalNet config")
 	assertRan(t, env, "docker compose stop", false)
@@ -283,7 +283,7 @@ func TestLocalnetConfigRejectsBlankPath(t *testing.T) {
 	for _, value := range []string{"", "   "} {
 		t.Run(value, func(t *testing.T) {
 			env := setupLocalnet(t)
-			result := env.Invoke("", "localnet", "start", "--localnet-config", value)
+			result := env.Invoke("", "localnet", "start", "--config", value)
 			assertExitCode(t, result, 1)
 			assertContains(t, result.Output, "must not be blank")
 			if len(sourceBuilds(env)) != 0 {
